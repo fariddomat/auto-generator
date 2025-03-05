@@ -1,0 +1,26 @@
+{
+    "name": "fariddomat/auto-generator",
+    "description": "Automates CRUD and API generation for Laravel models.",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Fariddomat\\AutoGenerator\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Farid Domat",
+            "email": "fariddomat.000@gmail.com"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {},
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Fariddomat\\AutoApi\\AutoApiServiceProvider"
+            ]
+        }
+    }
+}
