@@ -15,11 +15,14 @@
         }
     ],
     "minimum-stability": "stable",
-    "require": { "php": ">=8.0.0"},
+    "require": {
+        "php": "^8.0",
+        "laravel/framework": "^9.0|^10.0|^11.0"
+    },
     "extra": {
         "laravel": {
             "providers": [
-                "Fariddomat\\AutoApi\\AutoApiServiceProvider"
+                "Fariddomat\\AutoGenerator\\AutoGeneratorServiceProvider"
             ]
         }
     }
