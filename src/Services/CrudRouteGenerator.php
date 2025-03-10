@@ -1,157 +1,49 @@
 <?php
 
-namespace Fariddomat\AutoCrud\Services;
+namespace Fariddomat\AutoGenerator\Services;
 
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
-class RouteGenerator
+class CrudRouteGenerator
 {
-    /**
-     * Create routes for the given resource.
-     *
-     * @param string $modelName The name of the model for which the routes will be generated
-     * @param string $controller The controller that should be used for the resource (e.g., PostController)
-     * @param string $type Either 'api' or 'web' depending on the route type
-     * @param bool $isDashboard Whether the route should be prefixed with 'dashboard'
-     * @param object|null $command Optional console command instance for feedback
-     * @param bool $withSoftDeletes Include restore route if true
-     * @param array $middleware Optional middleware to apply to the routes
-     * @return bool Success status
-     */
-    public function create(
-        string $modelName,
-        string $controller,
-        string $type,
-        bool $isDashboard = false,
-        $command = null,
-        bool $withSoftDeletes = false,
-        array $middleware = []
-    ): bool {
-        $modelName = Str::snake(Str::plural($modelName));
-        $isApi = $type === 'api';
-        $routesPath = base_path($isApi ? 'routes/api.php' : 'routes/web.php');
+    public static function create($name, $controller, $group, $isDashboard, $command, $softDeletes = false, $middleware = [])
+    {
+        $routeFile = base_path("routes/{$group}.php");
+        $pluralName = Str::plural(Str::snake($name));
+        $controllerClass = $isDashboard ? "App\\Http\\Controllers\\Dashboard\\{$controller}" : "App\\Http\\Controllers\\{$controller}";
+        
+        // Prefix and name settings based on dashboard
+        $routePrefix = $isDashboard ? 'dashboard' : '';
+        $namePrefix = $isDashboard ? "'dashboard.'" : "''";
 
-        // Determine the controller namespace
-        $controllerNamespace = $isDashboard ? 'App\Http\Controllers\Dashboard' : 'App\Http\Controllers';
-        $controllerFullClass = "$controllerNamespace\\$controller";
+        // Middleware string for the group (if any)
+        $middlewareString = empty($middleware) ? '' : "->middleware([" . implode(', ', array_map(fn($m) => "'$m'", $middleware)) . "])";
 
-        // Prepare middleware string if provided
-        $middlewareString = !empty($middleware) ? "->middleware(['" . implode("', '", $middleware) . "'])" : '';
+        // Route definitions
+        $routes = "\nRoute::prefix('$routePrefix')->name($namePrefix)" . $middlewareString . "->group(function () {\n";
+        $routes .= "    Route::resource('/$pluralName', \\{$controllerClass}::class);\n"; // Keep full namespace
+        if ($softDeletes) {
+            $routes .= "    Route::post('/$pluralName/{id}/restore', [\\{$controllerClass}::class, 'restore'])->name('$pluralName.restore');\n";
+        }
+        $routes .= "});\n";
 
-        // Base route code using short controller name
-        $routeCode = $isApi
-            ? "Route::apiResource('/{$modelName}', {$controller}::class)$middlewareString;"
-            : "Route::resource('/{$modelName}', {$controller}::class)$middlewareString;";
-
-        // Add restore route if soft deletes are enabled
-        if ($withSoftDeletes) {
-            $restoreRoute = "Route::post('/{$modelName}/{id}/restore', [{$controller}::class, 'restore'])$middlewareString"
-                . "->name('{$modelName}.restore');";
-            $routeCode .= "\n" . $restoreRoute;
+        // Append to route file
+        if (!File::exists($routeFile)) {
+            $command->warn("\033[33m Route file '$routeFile' does not exist. Creating it. \033[0m");
+            File::put($routeFile, "<?php\n\nuse Illuminate\Support\Facades\Route;\n");
         }
 
-        // Wrap in dashboard group if applicable (only for web routes)
-        if ($isDashboard && !$isApi) {
-            $groupMiddleware = !empty($middleware) ? "->middleware(['" . implode("', '", $middleware) . "'])" : '';
-            $routeCode = "Route::prefix('dashboard')"
-                . "->name('dashboard.')"
-                . $groupMiddleware
-                . "->group(function () {"
-                . "\n    Route::resource('/{$modelName}', {$controller}::class);"
-                . ($withSoftDeletes ? "\n    Route::post('/{$modelName}/{id}/restore', [{$controller}::class, 'restore'])->name('{$modelName}.restore');" : '')
-                . "\n});";
-        }
-
-        // Ensure the routes file exists and add the use statement
-        if (!File::exists($routesPath)) {
-            try {
-                $initialContent = "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\nuse $controllerFullClass;\n";
-                File::put($routesPath, $initialContent);
-                static::info($command, "Created routes file: $routesPath");
-            } catch (\Exception $e) {
-                static::error($command, "Failed to create routes file: " . $e->getMessage());
-                return false;
-            }
-        }
-
-        // Read and update the routes file
-        try {
-            $content = File::get($routesPath);
-
-            // Check if the use statement for the controller already exists
-            if (strpos($content, "use $controllerFullClass;") === false) {
-                // Add the use statement after the Route facade
-                $content = preg_replace(
-                    "/(use Illuminate\\\\Support\\\\Facades\\\\Route;)/",
-                    "$1\nuse $controllerFullClass;",
-                    $content,
-                    1
-                );
-                File::put($routesPath, $content);
-            }
-
-            // Check for existing resource route to avoid duplication
-            $resourcePattern = $isApi
-                ? "Route::apiResource\s*\(\s*['\"]\/{$modelName}['\"],\s*{$controller}::class\s*\)"
-                : "Route::resource\s*\(\s*['\"]\/{$modelName}['\"],\s*{$controller}::class\s*\)";
-            if (preg_match("/$resourcePattern/", $content)) {
-                static::warn($command, "Route for '{$modelName}' already exists in $routesPath. Skipping.");
-                return true; // Not an error, just skipping
-            }
-
-            // Append the new route code
-            File::append($routesPath, "\n" . $routeCode . "\n");
-            static::info($command, "Routes added to: $routesPath");
-            return true;
-        } catch (\Exception $e) {
-            static::error($command, "Failed to update routes file: " . $e->getMessage());
+        $currentContent = File::get($routeFile);
+        if (strpos($currentContent, "Route::resource('/$pluralName',") !== false && (!$isDashboard || strpos($currentContent, "prefix('$routePrefix')") !== false)) {
+            $command->warn("\033[33m Routes for '/$pluralName' already exist in $routeFile. Skipping. \033[0m");
             return false;
         }
-    }
 
-    /**
-     * Helper method to output info messages to the console.
-     *
-     * @param object|null $command Command instance
-     * @param string $message Message to display
-     */
-    protected static function info($command, $message)
-    {
-        if ($command) {
-            $command->info("\033[32m $message \033[0m");
-        } else {
-            echo "\033[32m $message \033[0m\n";
-        }
-    }
+        $content = rtrim($currentContent, "\n") . $routes . "\n";
+        File::put($routeFile, $content);
+        $command->info("\033[32m CRUD routes added to: $routeFile \033[0m");
 
-    /**
-     * Helper method to output warning messages to the console.
-     *
-     * @param object|null $command Command instance
-     * @param string $message Message to display
-     */
-    protected static function warn($command, $message)
-    {
-        if ($command) {
-            $command->warn($message);
-        } else {
-            echo "\033[33m $message \033[0m\n";
-        }
-    }
-
-    /**
-     * Helper method to output error messages to the console.
-     *
-     * @param object|null $command Command instance
-     * @param string $message Message to display
-     */
-    protected static function error($command, $message)
-    {
-        if ($command) {
-            $command->error($message);
-        } else {
-            echo "\033[31m $message \033[0m\n";
-        }
+        return true;
     }
 }

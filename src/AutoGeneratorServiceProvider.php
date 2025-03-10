@@ -10,7 +10,7 @@ class AutoGeneratorServiceProvider extends ServiceProvider
     {
         if ($this->app->runningInConsole()) {
             $this->commands([
-                \Fariddomat\AutoGenerator\Commands\MakeAuto::class,
+                Commands\MakeAuto::class,
             ]);
         }
 
@@ -21,6 +21,6 @@ class AutoGeneratorServiceProvider extends ServiceProvider
 
     public function register()
     {
-        //
+        // No registration needed yet
     }
 }

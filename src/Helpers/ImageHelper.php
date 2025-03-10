@@ -3,58 +3,68 @@
 namespace App\Helpers;
 
 use Illuminate\Support\Facades\Storage;
-
 use Intervention\Image\Laravel\Facades\Image;
 
 class ImageHelper
 {
-    public static function storeImageInPublicDirectory($image, $directory, $width = null, $hight = null)
+    /**
+     * Store an image in the public disk with optional resizing.
+     *
+     * @param \Illuminate\Http\UploadedFile $image
+     * @param string $directory
+     * @param int|null $width
+     * @param int|null $height
+     * @return string|null Path to the stored image or null on failure
+     */
+    public static function storeImageInPublicDirectory($image, $directory, $width = null, $height = null)
     {
-        try{
-        ini_set('memory_limit', '2048M'); // Adjust as needed
+        try {
+            ini_set('memory_limit', '2048M'); // Temporarily increase memory limit
 
-        // dd($width);
-        $filename = $image->getClientOriginalName();
-        $path = $directory;
-        // $path = public_path($directory);
-        // dd($path);
-        // Process the image using Intervention Image (optional)
-        if ($width == null && $hight == null) {
+            $filename = time() . '.' . $image->getClientOriginalExtension();
+            $path = "uploads/$directory";
+
+            // Process image with Intervention Image
             $processedImage = Image::read($image);
-        } elseif ($width != null && $hight != null) {
-            $processedImage = Image::read($image)
-                ->resize($width, $hight); // Encode as WebP with 80% quality (adjust as needed)
-
-        } else {
-            $processedImage = Image::read($image)
-                ->resize(800, 500, function ($constraint) { // Set width and scale height proportionally
+            if ($width !== null && $height !== null) {
+                $processedImage->resize($width, $height);
+            } elseif ($width !== null || $height !== null) {
+                $processedImage->resize($width ?: 800, $height ?: 500, function ($constraint) {
                     $constraint->aspectRatio();
                     $constraint->upsize();
-                }); // Encode as WebP with 80% quality (adjust as needed)
-        }
+                });
+            }
 
-        // imagedestroy($processedImage->getCore()); // releases memory
-        // Store the processed image in the public directory
-        // dd($processedImage);
-        $filename = time() . '.' . $image->getClientOriginalExtension();
-        Storage::disk('public')->put($path . '/' . $filename,
-            $processedImage->encodeByExtension($image->getClientOriginalExtension(), quality: 80)
-        );
-        // Storage::disk('public')->put($path . '/' . $filename, $processedImage);
-        return $path . '/' . $filename; // Return the full path with name
+            // Store the processed image
+            Storage::disk('public')->put(
+                "$path/$filename",
+                $processedImage->encodeByExtension($image->getClientOriginalExtension(), quality: 80)
+            );
 
-        }
-        catch (\Exception $e) {
-            // handle memory exhaustion
-            dd($e);
+            return "$path/$filename";
+        } catch (\Exception $e) {
+            \Log::error("Failed to store image: {$e->getMessage()}");
+            return null;
         }
     }
+
+    /**
+     * Remove an image from the public disk.
+     *
+     * @param string $image Path to the image
+     * @return bool Success status
+     */
     public static function removeImageInPublicDirectory($image)
     {
         try {
-            Storage::disk('public')->delete($image);
-        } catch (\Throwable $th) {
-            //throw $th;
+            if (Storage::disk('public')->exists($image)) {
+                Storage::disk('public')->delete($image);
+                return true;
+            }
+            return false;
+        } catch (\Throwable $e) {
+            \Log::error("Failed to remove image '$image': {$e->getMessage()}");
+            return false;
         }
     }
 }

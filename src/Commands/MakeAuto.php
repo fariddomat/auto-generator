@@ -3,15 +3,20 @@
 namespace Fariddomat\AutoGenerator\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
-use Fariddomat\AutoGenerator\Services\CrudGenerator;
-use Fariddomat\AutoGenerator\Services\ApiGenerator;
+use Fariddomat\AutoGenerator\Services\ModelGenerator;
 use Fariddomat\AutoGenerator\Services\MigrationGenerator;
+use Fariddomat\AutoGenerator\Services\CrudControllerGenerator;
+use Fariddomat\AutoGenerator\Services\ApiControllerGenerator;
+use Fariddomat\AutoGenerator\Services\ViewGenerator;
+use Fariddomat\AutoGenerator\Services\CrudRouteGenerator;
+use Fariddomat\AutoGenerator\Services\ApiRouteGenerator;
 
 class MakeAuto extends Command
 {
     protected $signature = 'make:auto';
-    protected $description = 'Generate CRUD and/or API modules interactively.';
+    protected $description = 'Generate CRUD and/or API modules interactively with controller-based validation';
 
     public function handle()
     {
@@ -35,23 +40,23 @@ class MakeAuto extends Command
 
         $this->info("\033[34m Generating for $name... \033[0m");
 
-        $parsedFields = (new CrudGenerator($name, $fields, $this))->parseFields();
+        // Parse fields once for reuse
+        $parsedFields = $this->parseFields($fields);
+
+        // Generate model and migration (shared for CRUD and API)
+        ModelGenerator::generate($name, $parsedFields, $this, $softDeletes, $searchEnabled, $searchableFields);
         MigrationGenerator::generate($name, Str::snake(Str::plural($name)), $parsedFields, $this, $softDeletes);
 
         if (in_array($type, ['crud', 'both'])) {
-            $crudGenerator = new CrudGenerator($name, $fields, $this);
-            $crudGenerator->generateModel($softDeletes);
-            $crudGenerator->generateController($isDashboard, $softDeletes, $middleware);
-            $crudGenerator->generateViews($isDashboard);
-            $crudGenerator->generateRoutes($isDashboard, $softDeletes, $middleware);
+            CrudControllerGenerator::generate($name, $isDashboard, $parsedFields, $this, $softDeletes, $middleware);
+            ViewGenerator::generateBladeViews($name, $isDashboard, $parsedFields);
+            CrudRouteGenerator::create($name, "{$name}Controller", 'web', $isDashboard, $this, $softDeletes, $middleware);
         }
 
         if (in_array($type, ['api', 'both'])) {
-            $apiGenerator = new ApiGenerator($name, $fields, $this);
-            if ($type !== 'both') $apiGenerator->generateModel($softDeletes, $searchEnabled, $searchableFields);
-            $apiGenerator->generateController($version, $middleware, $softDeletes, $searchEnabled, $searchableFields);
-            $apiGenerator->generateRoutes($version, $middleware, $softDeletes);
-            $apiGenerator->generateOpenApiSpec($version, $softDeletes, $searchEnabled);
+            ApiControllerGenerator::generate($name, $version, $parsedFields, $this, $softDeletes, $searchEnabled, $searchableFields, $middleware);
+            ApiRouteGenerator::create($name, "{$name}ApiController", $version, $this, $softDeletes, $middleware);
+            $this->generateOpenApiSpec($name, $version, $parsedFields, $softDeletes, $searchEnabled);
         }
 
         $this->info("\033[34m Generation for $name completed successfully! \033[0m");
@@ -112,5 +117,103 @@ class MakeAuto extends Command
             if ($searchEnabled) $this->line("  \033[32m Searchable Fields: \033[0m " . (empty($searchableFields) ? 'All string fields' : implode(', ', $searchableFields)));
         }
         $this->line("  \033[32m Middleware: \033[0m " . (empty($middleware) ? 'None' : implode(', ', $middleware)));
+    }
+
+    protected function parseFields($fields)
+    {
+        $parsed = [];
+        foreach ($fields as $field) {
+            $parts = explode(':', $field);
+            if (empty($parts[0])) {
+                $this->warn("Skipping malformed field: '$field'. Expected format: 'name:type:modifiers'");
+                continue;
+            }
+
+            $name = $parts[0];
+            $type = $parts[1] ?? 'string';
+            $modifiers = array_slice($parts, 2);
+
+            $migrationType = $type;
+            if ($type === 'select') {
+                $migrationType = 'unsignedBigInteger';
+            } elseif (in_array($type, ['file', 'image', 'images'])) {
+                $migrationType = 'string';
+            }
+
+            $parsed[] = [
+                'name' => $name,
+                'type' => $migrationType,
+                'original_type' => $type,
+                'modifiers' => $modifiers,
+            ];
+        }
+        return $parsed;
+    }
+
+    protected function generateOpenApiSpec($name, $version, $parsedFields, $softDeletes, $searchEnabled)
+    {
+        $specPath = base_path("openapi/{$name}.json");
+        $routePrefix = Str::plural(Str::snake($name));
+
+        $spec = [
+            'openapi' => '3.0.0',
+            'info' => [
+                'title' => "{$name} API (Version $version)",
+                'version' => $version,
+                'description' => "API for managing {$name} resources.",
+            ],
+            'paths' => [
+                "/$version/$routePrefix" => [
+                    'get' => [
+                        'summary' => "List all {$name}s",
+                        'parameters' => array_merge(
+                            $searchEnabled ? [
+                                ['name' => 'search', 'in' => 'query', 'description' => 'Search term', 'required' => false, 'schema' => ['type' => 'string']],
+                            ] : [],
+                            [
+                                ['name' => 'per_page', 'in' => 'query', 'description' => 'Items per page', 'required' => false, 'schema' => ['type' => 'integer', 'default' => 15]],
+                                ['name' => 'page', 'in' => 'query', 'description' => 'Page number', 'required' => false, 'schema' => ['type' => 'integer', 'default' => 1]],
+                            ]
+                        ),
+                        'responses' => ['200' => ['description' => 'Success']],
+                    ],
+                    'post' => [
+                        'summary' => "Create a {$name}",
+                        'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => ['$ref' => "#/components/schemas/{$name}"]]]],
+                        'responses' => ['201' => ['description' => 'Created']],
+                    ],
+                ],
+                "/$version/$routePrefix/{id}" => [
+                    'get' => ['summary' => "Show a {$name}", 'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]], 'responses' => ['200' => ['description' => 'Success']]],
+                    'put' => ['summary' => "Update a {$name}", 'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]], 'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => ['$ref' => "#/components/schemas/{$name}"]]]], 'responses' => ['200' => ['description' => 'Updated']]],
+                    'delete' => ['summary' => "Delete a {$name}", 'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]], 'responses' => ['204' => ['description' => 'Deleted']]],
+                ],
+            ],
+            'components' => [
+                'schemas' => [
+                    $name => [
+                        'type' => 'object',
+                        'properties' => array_combine(
+                            array_column($parsedFields, 'name'),
+                            array_map(fn($f) => ['type' => in_array($f['original_type'], ['file', 'image', 'images']) ? 'string' : $f['original_type']], $parsedFields)
+                        ),
+                    ],
+                ],
+            ],
+        ];
+
+        if ($softDeletes) {
+            $spec['paths']["/$version/$routePrefix/{id}/restore"] = [
+                'post' => [
+                    'summary' => "Restore a {$name}",
+                    'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]],
+                    'responses' => ['200' => ['description' => 'Restored']],
+                ],
+            ];
+        }
+
+        File::ensureDirectoryExists(dirname($specPath));
+        File::put($specPath, json_encode($spec, JSON_PRETTY_PRINT));
+        $this->info("\033[32m OpenAPI spec created: $specPath \033[0m");
     }
 }
