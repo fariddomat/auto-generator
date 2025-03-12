@@ -66,7 +66,18 @@ Example Command
 Generate a Post model with CRUD and API:
 
 ``` bash
-php artisan make:auto --model=Post --fields="title:string,user_id:select,images:images:nullable" --type=both --dashboard --soft-deletes --search-enabled --middleware="auth:api"
+php artisan make:auto 
+Post 
+title:string
+user_id:select
+images:images:nullable
+
+2 
+v1
+yes 
+yes 
+yes
+auth:api
 ```
 Generated Output
 
