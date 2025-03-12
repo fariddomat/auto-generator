@@ -23,10 +23,16 @@ class ModelGenerator
             $traits .= "\n    use SoftDeletes;";
         }
 
-        // Fillable fields
-        $fillable = implode("', '", array_column($parsedFields, 'name'));
+        // Fillable fields (exclude belongsToMany)
+        $fillable = [];
+        foreach ($parsedFields as $field) {
+            if ($field['original_type'] !== 'belongsToMany') {
+                $fillable[] = "'{$field['name']}'";
+            }
+        }
+        $fillableString = implode(', ', $fillable);
 
-        // Validation rules (moved from CrudGenerator/ApiGenerator)
+        // Validation rules
         $rules = self::generateRules($parsedFields);
 
         // Searchable fields
@@ -38,7 +44,7 @@ class ModelGenerator
             $searchable = "\n    protected \$searchable = ['" . implode("', '", $searchFields) . "'];";
         }
 
-        // Relationships for select fields
+        // Relationships
         $relationships = "";
         foreach ($parsedFields as $field) {
             if ($field['original_type'] === 'select') {
@@ -48,6 +54,21 @@ class ModelGenerator
     public function {$relatedModel}()
     {
         return \$this->belongsTo(\\App\\Models\\{$relatedModel}::class, '{$field['name']}');
+    }
+EOT;
+            } elseif ($field['original_type'] === 'belongsToMany') {
+                $relatedModel = Str::studly($field['name']); // e.g., 'Users'
+                $relatedModelSingular = Str::singular($relatedModel); // e.g., 'User'
+                $pivotTable =  Str::snake($name) . '_' . Str::snake($field['name']);
+                $relatedKey = Str::snake($relatedModelSingular) === 'user' ? 'user_id' : Str::snake($relatedModel) . '_id';
+                $fieldSingular=Str::singular($field['name']);
+                $nameSnake =  Str::snake($name) ;
+
+    $relationships .= <<<EOT
+
+    public function {$field['name']}()
+    {
+        return \$this->belongsToMany(\\App\\Models\\{$relatedModelSingular}::class, '{$pivotTable}', '{$nameSnake}_id', '{$fieldSingular}_id');
     }
 EOT;
             }
@@ -65,7 +86,7 @@ class {$name} extends Model
 {
     $traits
 
-    protected \$fillable = ['$fillable'];
+    protected \$fillable = [$fillableString];
 
     public static function rules()
     {
@@ -107,6 +128,11 @@ EOT;
                 case 'select':
                     $tableName = Str::snake(Str::plural(Str::beforeLast($name, '_id')));
                     $rules[] = "'$name' => '$rule|exists:$tableName,id'";
+                    break;
+                case 'belongsToMany':
+                    $tableName = Str::snake($field['name']); // e.g., 'users'
+                    $rules[] = "'$name' => '$rule|array'";
+                    $rules[] = "'$name.*' => 'exists:$tableName,id'";
                     break;
                 case 'boolean':
                     $rules[] = "'$name' => 'sometimes|boolean'";

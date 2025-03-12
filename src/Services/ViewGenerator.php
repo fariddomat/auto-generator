@@ -19,12 +19,13 @@ class ViewGenerator
                 : Str::plural(Str::snake($name)))
         );
         $pluralVariable = Str::plural(Str::camel($name));
-        $variableName = Str::camel($name); // e.g., 'alii' for 'Alii'
+        $variableName = Str::camel($name);
 
         File::ensureDirectoryExists($basePath);
 
         File::put("$basePath/create.blade.php", self::generateCreateBlade($folderName, $parsedFields));
         File::put("$basePath/edit.blade.php", self::generateEditBlade($folderName, $parsedFields, $variableName));
+        File::put("$basePath/show.blade.php", self::generateShowBlade($folderName, $parsedFields, $variableName));
 
         $columns = implode("', '", array_map(fn($f) => $f['name'], $parsedFields));
         $indexView = <<<EOT
@@ -155,6 +156,25 @@ EOT;
             </div>
 EOT;
                     break;
+                case 'belongsToMany':
+                    $relatedModelVar = Str::plural(Str::camel($name)); // e.g., 'roles'
+                    $selected = $isEdit
+                        ? "{{ \${$variableName}->$name instanceof \\Illuminate\\Database\\Eloquent\\Collection && \${$variableName}->{$name}->pluck('id')->contains(\$option->id) ? 'selected' : '' }}"
+                        : "{{ in_array(\$option->id, old('$name', [])) ? 'selected' : '' }}";
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                <select name="{$name}[]" multiple class="w-full border border-gray-300 rounded p-2">
+                    @foreach (\$$relatedModelVar as \$option)
+                        <option value="{{ \$option->id }}" $selected>{{ \$option->name }}</option>
+                    @endforeach
+                </select>
+                @error('$name')
+                    <span class="text-red-500 text-sm">{{ \$message }}</span>
+                @enderror
+            </div>
+EOT;
+                    break;
                 case 'boolean':
                     $checked = $isEdit ? "{{ \${$variableName}->$name ? 'checked' : '' }}" : "";
                     $output .= <<<EOT
@@ -207,7 +227,7 @@ EOT;
                     $output .= <<<EOT
                 @error('$name')
                     <span class="text-red-500 text-sm">{{ \$message }}</span>
-                @enderror
+                @endisset
             </div>
 EOT;
                     break;
@@ -232,6 +252,131 @@ EOT;
                 @error('$name')
                     <span class="text-red-500 text-sm">{{ \$message }}</span>
                 @enderror
+            </div>
+EOT;
+                    break;
+            }
+        }
+        return $output;
+    }
+
+    public static function generateShowBlade($folderName, $parsedFields, $variableName)
+    {
+        $displayFields = self::generateDisplayFields($parsedFields, $variableName);
+        return <<<EOT
+<x-app-layout>
+    <div class="container mx-auto p-6">
+        <h1 class="text-2xl font-bold mb-4">
+            @lang('site.show') @lang('site.{$folderName}')
+        </h1>
+
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            $displayFields
+            <a href="{{ route('{$folderName}.index') }}" class="mt-4 inline-block px-4 py-2 bg-gray-500 text-white rounded shadow hover:bg-gray-700">
+                @lang('site.back')
+            </a>
+        </div>
+    </div>
+</x-app-layout>
+EOT;
+    }
+
+    public static function generateDisplayFields($parsedFields, $variableName)
+    {
+        $output = "";
+        foreach ($parsedFields as $field) {
+            $name = $field['name'];
+            $type = $field['original_type'];
+
+            switch ($type) {
+                case 'string':
+                case 'text':
+                case 'decimal':
+                case 'integer':
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                <p class="text-gray-900">{{ \${$variableName}->$name ?? '—' }}</p>
+            </div>
+EOT;
+                    break;
+                case 'select':
+                    $relatedModel = Str::camel(Str::beforeLast($name, '_id'));
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                <p class="text-gray-900">
+                    @isset(\${$variableName}->$relatedModel)
+                        {{ \${$variableName}->{$relatedModel}->name ?? '—' }}
+                    @else
+                        {{ \${$variableName}->$name ?? '—' }}
+                    @endisset
+                </p>
+            </div>
+EOT;
+                    break;
+                case 'belongsToMany':
+                    $relatedModel = Str::camel($name);
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                <p class="text-gray-900">
+                    @if(\${$variableName}->$name instanceof \\Illuminate\\Database\\Eloquent\\Collection && \${$variableName}->{$name}->isNotEmpty())
+                        {{ \${$variableName}->{$name}->pluck('name')->implode(', ') }}
+                    @else
+                        —
+                    @endif
+                </p>
+            </div>
+EOT;
+                    break;
+                case 'boolean':
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                <p class="text-gray-900">{{ \${$variableName}->$name ? 'Yes' : 'No' }}</p>
+            </div>
+EOT;
+                    break;
+                case 'file':
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                @isset(\${$variableName}->$name)
+                    <p class="text-gray-900">
+                        <a href="{{ Storage::url(\${$variableName}->$name) }}" target="_blank" class="text-blue-500 hover:underline">@lang('site.view_file')</a>
+                    </p>
+                @else
+                    <p class="text-gray-900">—</p>
+                @endisset
+            </div>
+EOT;
+                    break;
+                case 'image':
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                @isset(\${$variableName}->$name)
+                    <img src="{{ Storage::url(\${$variableName}->$name) }}" alt="$name" class="mt-2 w-48 h-48 rounded">
+                @else
+                    <p class="text-gray-900">—</p>
+                @endisset
+            </div>
+EOT;
+                    break;
+                case 'images':
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                @if(!empty(\${$variableName}->$name))
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        @foreach(json_decode(\${$variableName}->$name, true) ?? [] as \$image)
+                            <img src="{{ Storage::url(\$image) }}" alt="$name" class="w-24 h-24 rounded">
+                        @endforeach
+                    </div>
+                @else
+                    <p class="text-gray-900">—</p>
+                @endif
             </div>
 EOT;
                     break;

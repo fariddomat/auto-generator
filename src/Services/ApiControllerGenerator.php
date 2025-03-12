@@ -14,17 +14,32 @@ class ApiControllerGenerator
         $middlewareString = !empty($middleware) ? "['" . implode("', '", $middleware) . "']" : '[]';
         $routePrefix = Str::plural(Str::snake($name));
 
-        // Generate relationship data for select fields
+        // Generate relationship data for select and belongsToMany fields
         $relationData = self::generateRelationData($parsedFields);
 
-        // File handling logic centralized
+        // File handling logic
         $fileHandling = self::generateFileHandling($parsedFields, $routePrefix, false);
         $fileUpdateHandling = self::generateFileHandling($parsedFields, $routePrefix, true);
+
+        // BelongsToMany handling logic
+        $belongsToManyHandlingStore = self::generateBelongsToManyHandling($parsedFields, 'store');
+        $belongsToManyHandlingUpdate = self::generateBelongsToManyHandling($parsedFields, 'update');
 
         // Search logic
         $searchLogic = $searchEnabled
             ? "\$search = \$request->query('search');\n        \$perPage = \$request->query('per_page', 15);\n        \$query = {$name}::query();\n        if (\$search) {\n            \$searchable = property_exists({$name}::class, 'searchable') ? (new {$name})->searchable : [];\n            foreach (\$searchable as \$field) {\n                \$query->orWhere(\$field, 'like', \"%{\$search}%\");\n            }\n        }\n        \$records = \$query->paginate(\$perPage);"
             : "\$records = {$name}::paginate(15);";
+
+        // Generate relationships for eager loading
+        $relationships = array_filter(array_map(function ($field) {
+            if ($field['original_type'] === 'select') {
+                return Str::camel(Str::beforeLast($field['name'], '_id'));
+            } elseif ($field['original_type'] === 'belongsToMany') {
+                return $field['name'];
+            }
+            return null;
+        }, $parsedFields));
+        $withClause = empty($relationships) ? '' : "with(['" . implode("', '", $relationships) . "'])";
 
         $content = <<<EOT
 <?php
@@ -63,12 +78,13 @@ $relationData
         \$validated = \$request->validate({$name}::rules());
 $fileHandling
         \$record = {$name}::create(\$validated);
+$belongsToManyHandlingStore
         return response()->json(['data' => \$record], 201);
     }
 
     public function show(\$id)
     {
-        \$record = {$name}::find(\$id);
+        \$record = {$name}::{$withClause}->find(\$id);
         return \$record ? response()->json(['data' => \$record]) : response()->json(['message' => 'Not found'], 404);
     }
 
@@ -91,6 +107,7 @@ $relationData
         \$validated = \$request->validate({$name}::rules());
 $fileUpdateHandling
         \$record->update(\$validated);
+$belongsToManyHandlingUpdate
         return response()->json(['data' => \$record]);
     }
 
@@ -130,6 +147,10 @@ EOT;
                 $relatedModel = Str::studly(Str::beforeLast($field['name'], '_id'));
                 $varName = Str::plural(Str::camel($relatedModel));
                 $relationData .= "            '$varName' => \\App\\Models\\{$relatedModel}::all(),\n";
+            } elseif ($field['original_type'] === 'belongsToMany') {
+                $relatedModel =  Str::singular(Str::studly($field['name']));
+                $varName = Str::plural(Str::camel($field['name']));
+                $relationData .= "            '$varName' => \\App\\Models\\{$relatedModel}::all(),\n";
             }
         }
         return $relationData;
@@ -157,5 +178,21 @@ EOT;
             }
         }
         return $fileHandling;
+    }
+
+    protected static function generateBelongsToManyHandling($parsedFields, $method)
+    {
+        $logic = "";
+        foreach ($parsedFields as $field) {
+            if ($field['original_type'] === 'belongsToMany') {
+                $name = $field['name'];
+                if ($method === 'store') {
+                    $logic .= "        if (\$request->has('$name')) {\n            \$record->$name()->attach(\$request->input('$name'));\n        }\n";
+                } elseif ($method === 'update') {
+                    $logic .= "        if (\$request->has('$name')) {\n            \$record->$name()->sync(\$request->input('$name'));\n        }\n";
+                }
+            }
+        }
+        return $logic;
     }
 }

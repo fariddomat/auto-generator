@@ -24,7 +24,11 @@ class CrudControllerGenerator
         $fileHandlingUpdate = self::generateFileHandling($parsedFields, $variableName, 'update');
         $fileCleanup = self::generateFileCleanup($parsedFields, $variableName);
         $relationshipsFetch = self::generateRelationshipsFetch($parsedFields);
+
         $compactVars = implode(', ', self::getCompactVars($parsedFields));
+
+        $belongsToManyHandlingStore = self::generateBelongsToManyHandling($parsedFields, $variableName, 'store');
+        $belongsToManyHandlingUpdate = self::generateBelongsToManyHandling($parsedFields, $variableName, 'update');
 
         $destroyMethod = $softDeletes
             ? "    public function destroy(\$id)\n    {\n        \${$variableName} = $modelClass::findOrFail(\$id);\n        \${$variableName}->delete();\n        return redirect()->route('{$viewPrefix}{$pluralVariable}.index')->with('success', '{$name} deleted successfully.');\n    }"
@@ -61,13 +65,15 @@ $middlewareString
             $validationRules
         ]);
         $fileHandlingStore
-        $modelClass::create(\$validated);
+        \${$variableName} = $modelClass::create(\$validated);
+        $belongsToManyHandlingStore
         return redirect()->route('{$viewPrefix}{$pluralVariable}.index')->with('success', '{$name} created successfully.');
     }
 
     public function show(\$id)
     {
         \${$variableName} = $modelClass::findOrFail(\$id);
+        $relationshipsFetch
         return view('{$viewPrefix}{$pluralVariable}.show', compact('{$variableName}'));
     }
 
@@ -86,6 +92,7 @@ $middlewareString
         ]);
         $fileHandlingUpdate
         \${$variableName}->update(\$validated);
+        $belongsToManyHandlingUpdate
         return redirect()->route('{$viewPrefix}{$pluralVariable}.index')->with('success', '{$name} updated successfully.');
     }
 
@@ -131,6 +138,11 @@ EOT;
                 case 'select':
                     $table = Str::snake(Str::plural(Str::beforeLast($name, '_id')));
                     $rules[] = "'$name' => '$rule|exists:$table,id'";
+                    break;
+                case 'belongsToMany':
+                    $table = Str::snake($field['name']);
+                    $rules[] = "'$name' => '$rule|array'";
+                    $rules[] = "'$name.*' => 'exists:$table,id'";
                     break;
                 case 'boolean':
                     $rules[] = "'$name' => 'sometimes|boolean'";
@@ -187,10 +199,27 @@ EOT;
     {
         $logic = '';
         foreach ($parsedFields as $field) {
-            if ($field['original_type'] === 'select') {
-                $relatedModel = Str::studly(Str::beforeLast($field['name'], '_id'));
+            if ($field['original_type'] === 'select' || $field['original_type'] === 'belongsToMany') {
+                $relatedModel =  Str::singular(Str::studly($field['original_type'] === 'select' ? Str::beforeLast($field['name'], '_id') : $field['name']));
                 $varName = Str::plural(Str::camel($relatedModel));
                 $logic .= "        \${$varName} = \\App\\Models\\{$relatedModel}::all();\n";
+            }
+        }
+        return $logic;
+    }
+
+
+    protected static function generateBelongsToManyHandling($parsedFields, $variableName, $method)
+    {
+        $logic = '';
+        foreach ($parsedFields as $field) {
+            if ($field['original_type'] === 'belongsToMany') {
+                $name = $field['name'];
+                if ($method === 'store') {
+                    $logic .= "        if (\$request->has('$name')) {\n            \${$variableName}->{$name}()->attach(\$request->input('$name'));\n        }\n";
+                } elseif ($method === 'update') {
+                    $logic .= "        if (\$request->has('$name')) {\n            \${$variableName}->{$name}()->sync(\$request->input('$name'));\n        }\n";
+                }
             }
         }
         return $logic;
@@ -200,8 +229,8 @@ EOT;
     {
         $vars = [];
         foreach ($parsedFields as $field) {
-            if ($field['original_type'] === 'select') {
-                $vars[] = "'".Str::plural(Str::camel(Str::studly(Str::beforeLast($field['name'], '_id'))))."'";
+            if ($field['original_type'] === 'select' || $field['original_type'] === 'belongsToMany') {
+                $vars[] = "'".Str::plural(Str::camel(Str::studly($field['original_type'] === 'select' ? Str::beforeLast($field['name'], '_id') : $field['name'])))."'";
             }
         }
         return $vars;

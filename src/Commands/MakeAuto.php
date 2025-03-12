@@ -28,7 +28,7 @@ class MakeAuto extends Command
         $version = $type !== 'crud' ? $this->askVersion() : null;
         $isDashboard = $type !== 'api' ? $this->confirm("\033[33m Use dashboard prefix? (Default: No) \033[0m", false) : false;
         $softDeletes = $this->confirm("\033[33m Enable soft deletes? (Default: No) \033[0m", false);
-        $searchEnabled = $type !== 'crud' ? $this->confirm("\033[33m Enable search? (Default: No) \033[0m", false) : false;
+        $searchEnabled = $type !== 'api' ? $this->confirm("\033[33m Enable search? (Default: No) \033[0m", false) : false;
         $searchableFields = $searchEnabled ? $this->askSearchableFields($fields) : [];
         $middleware = $this->askMiddleware();
 
@@ -75,7 +75,8 @@ class MakeAuto extends Command
     protected function askFields($name)
     {
         $fields = [];
-        $this->info("\033[36m Define fields for $name (e.g., title:string, user_id:select, photo:image). Leave blank to finish. \033[0m");
+        $this->info("\033[36m Define fields for $name (e.g., title:string, user_id:select, roles:belongsToMany, photo:image). Leave blank to finish. \033[0m");
+        $this->info("\033[36m Use 'belongsToMany' for many-to-many relationships (e.g., roles:belongsToMany creates a pivot table). \033[0m");
         while (true) {
             $field = $this->ask("\033[33m Enter a field: \033[0m");
             if (empty($field)) break;
@@ -122,6 +123,7 @@ class MakeAuto extends Command
     protected function parseFields($fields)
     {
         $parsed = [];
+        $validTypes = ['string', 'text', 'integer', 'decimal', 'select', 'belongsToMany', 'boolean', 'file', 'image', 'images'];
         foreach ($fields as $field) {
             $parts = explode(':', $field);
             if (empty($parts[0])) {
@@ -133,11 +135,18 @@ class MakeAuto extends Command
             $type = $parts[1] ?? 'string';
             $modifiers = array_slice($parts, 2);
 
+            if (!in_array($type, $validTypes)) {
+                $this->warn("Invalid type '$type' for field '$name'. Defaulting to 'string'. Supported types: " . implode(', ', $validTypes));
+                $type = 'string';
+            }
+
             $migrationType = $type;
             if ($type === 'select') {
                 $migrationType = 'unsignedBigInteger';
             } elseif (in_array($type, ['file', 'image', 'images'])) {
                 $migrationType = 'string';
+            } elseif ($type === 'belongsToMany') {
+                $migrationType = null; // No column in main table for belongsToMany
             }
 
             $parsed[] = [
@@ -154,6 +163,21 @@ class MakeAuto extends Command
     {
         $specPath = base_path("openapi/{$name}.json");
         $routePrefix = Str::plural(Str::snake($name));
+
+        $properties = [];
+        foreach ($parsedFields as $field) {
+            if ($field['original_type'] === 'belongsToMany') {
+                $properties[$field['name']] = [
+                    'type' => 'array',
+                    'items' => ['type' => 'integer'],
+                    'description' => "Array of {$field['name']} IDs",
+                ];
+            } else {
+                $properties[$field['name']] = [
+                    'type' => in_array($field['original_type'], ['file', 'image', 'images']) ? 'string' : $field['original_type'],
+                ];
+            }
+        }
 
         $spec = [
             'openapi' => '3.0.0',
@@ -193,10 +217,7 @@ class MakeAuto extends Command
                 'schemas' => [
                     $name => [
                         'type' => 'object',
-                        'properties' => array_combine(
-                            array_column($parsedFields, 'name'),
-                            array_map(fn($f) => ['type' => in_array($f['original_type'], ['file', 'image', 'images']) ? 'string' : $f['original_type']], $parsedFields)
-                        ),
+                        'properties' => $properties,
                     ],
                 ],
             ],
