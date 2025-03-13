@@ -137,6 +137,7 @@ EOT;
 EOT;
                     break;
                 case 'select':
+                case 'belongsTo':
                     $relatedModelVar = Str::plural(Str::camel(Str::beforeLast($name, '_id')));
                     $selected = $isEdit
                         ? "{{ \${$variableName}->$name == \$option->id ? 'selected' : '' }}"
@@ -227,7 +228,7 @@ EOT;
                     $output .= <<<EOT
                 @error('$name')
                     <span class="text-red-500 text-sm">{{ \$message }}</span>
-                @endisset
+                @enderror
             </div>
 EOT;
                     break;
@@ -249,6 +250,66 @@ EOT;
 EOT;
                     }
                     $output .= <<<EOT
+                @error('$name')
+                    <span class="text-red-500 text-sm">{{ \$message }}</span>
+                @enderror
+            </div>
+EOT;
+                    break;
+                case 'date':
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                <input type="date" name="$name" value="$value" class="w-full border border-gray-300 rounded p-2">
+                @error('$name')
+                    <span class="text-red-500 text-sm">{{ \$message }}</span>
+                @enderror
+            </div>
+EOT;
+                    break;
+                case 'datetime':
+                    $value = $isEdit ? "{{ old('$name', \${$variableName}->$name ? \${$variableName}->{$name}->format('Y-m-d\\TH:i') : '') }}" : "{{ old('$name') }}";
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                <input type="datetime-local" name="$name" value="$value" class="w-full border border-gray-300 rounded p-2">
+                @error('$name')
+                    <span class="text-red-500 text-sm">{{ \$message }}</span>
+                @enderror
+            </div>
+EOT;
+                    break;
+                case 'enum':
+                    // Handle $field['modifiers'] as either an array or a comma-separated string
+                    $enumValues = implode(',', $field['modifiers']);
+                    $enumValues = explode(',', $enumValues);
+                    $options = '';
+                    foreach ($enumValues as $option) {
+                        $option = trim($option); // Clean up any whitespace
+                        $selected = $isEdit
+                            ? "{{ old('$name', \${$variableName}->$name) == '$option' ? 'selected' : '' }}"
+                            : "{{ old('$name') == '$option' ? 'selected' : '' }}";
+                        $options .= "                    <option value=\"$option\" $selected>$option</option>\n";
+                    }
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                <select name="$name" class="w-full border border-gray-300 rounded p-2">
+                    <option value="">@lang('site.select_$name')</option>
+$options
+                </select>
+                @error('$name')
+                    <span class="text-red-500 text-sm">{{ \$message }}</span>
+                @enderror
+            </div>
+EOT;
+                    break;
+                case 'json':
+                    $value = $isEdit ? "{{ old('$name', json_encode(\${$variableName}->$name, JSON_PRETTY_PRINT)) }}" : "{{ old('$name') }}";
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                <textarea name="$name" class="w-full border border-gray-300 rounded p-2" placeholder="Enter JSON data">$value</textarea>
                 @error('$name')
                     <span class="text-red-500 text-sm">{{ \$message }}</span>
                 @enderror
@@ -301,6 +362,7 @@ EOT;
 EOT;
                     break;
                 case 'select':
+                case 'belongsTo':
                     $relatedModel = Str::camel(Str::beforeLast($name, '_id'));
                     $output .= <<<EOT
             <div class="mb-4">
@@ -377,6 +439,31 @@ EOT;
                 @else
                     <p class="text-gray-900">—</p>
                 @endif
+            </div>
+EOT;
+                    break;
+                case 'date':
+                case 'datetime':
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                <p class="text-gray-900">{{ \${$variableName}->$name ? \${$variableName}->{$name}->format('Y-m-d" . ($type === 'datetime' ? ' H:i' : '') . "') : '—' }}</p>
+            </div>
+EOT;
+                    break;
+                case 'enum':
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                <p class="text-gray-900">{{ \${$variableName}->$name ?? '—' }}</p>
+            </div>
+EOT;
+                    break;
+                case 'json':
+                    $output .= <<<EOT
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">@lang('site.$name')</label>
+                <pre class="text-gray-900 bg-gray-100 p-2 rounded">{{ json_encode(\${$variableName}->$name, JSON_PRETTY_PRINT) ?? '—' }}</pre>
             </div>
 EOT;
                     break;

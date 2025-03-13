@@ -14,7 +14,7 @@ class ApiControllerGenerator
         $middlewareString = !empty($middleware) ? "['" . implode("', '", $middleware) . "']" : '[]';
         $routePrefix = Str::plural(Str::snake($name));
 
-        // Generate relationship data for select and belongsToMany fields
+        // Generate relationship data and enum options for select, belongsTo, belongsToMany, and enum fields
         $relationData = self::generateRelationData($parsedFields);
 
         // File handling logic
@@ -32,14 +32,14 @@ class ApiControllerGenerator
 
         // Generate relationships for eager loading
         $relationships = array_filter(array_map(function ($field) {
-            if ($field['original_type'] === 'select') {
+            if (in_array($field['original_type'], ['select', 'belongsTo'])) {
                 return Str::camel(Str::beforeLast($field['name'], '_id'));
             } elseif ($field['original_type'] === 'belongsToMany') {
                 return $field['name'];
             }
             return null;
         }, $parsedFields));
-        $withClause = empty($relationships) ? '' : "with(['" . implode("', '", $relationships) . "'])";
+        $withClause = empty($relationships) ? '' : "with(['" . implode("', '", $relationships) . "'])->";
 
         $content = <<<EOT
 <?php
@@ -84,7 +84,7 @@ $belongsToManyHandlingStore
 
     public function show(\$id)
     {
-        \$record = {$name}::{$withClause}->find(\$id);
+        \$record = {$name}::{$withClause}find(\$id);
         return \$record ? response()->json(['data' => \$record]) : response()->json(['message' => 'Not found'], 404);
     }
 
@@ -143,14 +143,18 @@ EOT;
     {
         $relationData = "";
         foreach ($parsedFields as $field) {
-            if ($field['original_type'] === 'select') {
+            if (in_array($field['original_type'], ['select', 'belongsTo'])) {
                 $relatedModel = Str::studly(Str::beforeLast($field['name'], '_id'));
                 $varName = Str::plural(Str::camel($relatedModel));
                 $relationData .= "            '$varName' => \\App\\Models\\{$relatedModel}::all(),\n";
             } elseif ($field['original_type'] === 'belongsToMany') {
-                $relatedModel =  Str::singular(Str::studly($field['name']));
+                $relatedModel = Str::singular(Str::studly($field['name']));
                 $varName = Str::plural(Str::camel($field['name']));
                 $relationData .= "            '$varName' => \\App\\Models\\{$relatedModel}::all(),\n";
+            } elseif ($field['original_type'] === 'enum') {
+                $name = $field['name'];
+                $values = implode("', '", $field['modifiers']);
+                $relationData .= "            '{$name}_options' => ['{$values}'],\n";
             }
         }
         return $relationData;

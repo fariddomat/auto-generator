@@ -75,8 +75,8 @@ class MakeAuto extends Command
     protected function askFields($name)
     {
         $fields = [];
-        $this->info("\033[36m Define fields for $name (e.g., title:string, user_id:select, roles:belongsToMany, photo:image). Leave blank to finish. \033[0m");
-        $this->info("\033[36m Use 'belongsToMany' for many-to-many relationships (e.g., roles:belongsToMany creates a pivot table). \033[0m");
+        $this->info("\033[36m Define fields for $name (e.g., title:string, user_id:belongsTo, roles:belongsToMany, photo:image, status:enum:active,inactive). Leave blank to finish. \033[0m");
+        $this->info("\033[36m Use 'belongsTo' for one-to-many (e.g., user_id:belongsTo), 'belongsToMany' for many-to-many (e.g., roles:belongsToMany creates a pivot table), 'select' for UI dropdown hints, or new types like 'date', 'datetime', 'enum', 'json'. \033[0m");
         while (true) {
             $field = $this->ask("\033[33m Enter a field: \033[0m");
             if (empty($field)) break;
@@ -123,7 +123,7 @@ class MakeAuto extends Command
     protected function parseFields($fields)
     {
         $parsed = [];
-        $validTypes = ['string', 'text', 'integer', 'decimal', 'select', 'belongsToMany', 'boolean', 'file', 'image', 'images'];
+        $validTypes = ['string', 'text', 'integer', 'decimal', 'select', 'belongsTo', 'belongsToMany', 'boolean', 'file', 'image', 'images', 'date', 'datetime', 'enum', 'json'];
         foreach ($fields as $field) {
             $parts = explode(':', $field);
             if (empty($parts[0])) {
@@ -141,12 +141,18 @@ class MakeAuto extends Command
             }
 
             $migrationType = $type;
-            if ($type === 'select') {
-                $migrationType = 'unsignedBigInteger';
+            if ($type === 'belongsTo' || $type === 'select') {
+                $migrationType = 'unsignedBigInteger'; // For foreign keys
             } elseif (in_array($type, ['file', 'image', 'images'])) {
                 $migrationType = 'string';
             } elseif ($type === 'belongsToMany') {
                 $migrationType = null; // No column in main table for belongsToMany
+            } elseif ($type === 'enum') {
+                if (empty($modifiers)) {
+                    $this->warn("Enum field '$name' requires values (e.g., status:enum:active,inactive). Skipping.");
+                    continue;
+                }
+                $migrationType = ['enum', $modifiers]; // Pass enum values as an array
             }
 
             $parsed[] = [
@@ -171,6 +177,23 @@ class MakeAuto extends Command
                     'type' => 'array',
                     'items' => ['type' => 'integer'],
                     'description' => "Array of {$field['name']} IDs",
+                ];
+            } elseif ($field['original_type'] === 'enum') {
+                $properties[$field['name']] = [
+                    'type' => 'string',
+                    'enum' => $field['modifiers'],
+                    'description' => "One of: " . implode(', ', $field['modifiers']),
+                ];
+            } elseif ($field['original_type'] === 'json') {
+                $properties[$field['name']] = [
+                    'type' => 'object',
+                    'additionalProperties' => true,
+                    'description' => "JSON data for {$field['name']}",
+                ];
+            } elseif (in_array($field['original_type'], ['date', 'datetime'])) {
+                $properties[$field['name']] = [
+                    'type' => 'string',
+                    'format' => $field['original_type'] === 'date' ? 'date' : 'date-time',
                 ];
             } else {
                 $properties[$field['name']] = [

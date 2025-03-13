@@ -56,7 +56,7 @@ $middlewareString
     public function create()
     {
         $relationshipsFetch
-        return view('{$viewPrefix}{$pluralVariable}.create', compact($compactVars));
+        return view('{$viewPrefix}{$pluralVariable}.create', compact([],$compactVars));
     }
 
     public function store(Request \$request)
@@ -135,7 +135,11 @@ EOT;
                 case 'integer':
                     $rules[] = "'$name' => '$rule|numeric'";
                     break;
+                case 'text':
+                    $rules[] = "'$name' => '$rule|string'";
+                    break;
                 case 'select':
+                case 'belongsTo':
                     $table = Str::snake(Str::plural(Str::beforeLast($name, '_id')));
                     $rules[] = "'$name' => '$rule|exists:$table,id'";
                     break;
@@ -156,6 +160,17 @@ EOT;
                 case 'images':
                     $rules[] = "'$name' => '$rule|array'";
                     $rules[] = "'$name.*' => 'image|max:2048'";
+                    break;
+                case 'date':
+                case 'datetime':
+                    $rules[] = "'$name' => '$rule|date'";
+                    break;
+                case 'enum':
+                    $values = implode(',', $field['modifiers']);
+                    $rules[] = "'$name' => '$rule|in:$values'";
+                    break;
+                case 'json':
+                    $rules[] = "'$name' => '$rule|json'";
                     break;
             }
         }
@@ -199,15 +214,18 @@ EOT;
     {
         $logic = '';
         foreach ($parsedFields as $field) {
-            if ($field['original_type'] === 'select' || $field['original_type'] === 'belongsToMany') {
-                $relatedModel =  Str::singular(Str::studly($field['original_type'] === 'select' ? Str::beforeLast($field['name'], '_id') : $field['name']));
+            if (in_array($field['original_type'], ['select', 'belongsTo', 'belongsToMany'])) {
+                $relatedModel = Str::singular(Str::studly(
+                    in_array($field['original_type'], ['select', 'belongsTo'])
+                        ? Str::beforeLast($field['name'], '_id')
+                        : $field['name']
+                ));
                 $varName = Str::plural(Str::camel($relatedModel));
                 $logic .= "        \${$varName} = \\App\\Models\\{$relatedModel}::all();\n";
             }
         }
         return $logic;
     }
-
 
     protected static function generateBelongsToManyHandling($parsedFields, $variableName, $method)
     {
@@ -229,8 +247,12 @@ EOT;
     {
         $vars = [];
         foreach ($parsedFields as $field) {
-            if ($field['original_type'] === 'select' || $field['original_type'] === 'belongsToMany') {
-                $vars[] = "'".Str::plural(Str::camel(Str::studly($field['original_type'] === 'select' ? Str::beforeLast($field['name'], '_id') : $field['name'])))."'";
+            if (in_array($field['original_type'], ['select', 'belongsTo', 'belongsToMany'])) {
+                $vars[] = "'" . Str::plural(Str::camel(Str::studly(
+                    in_array($field['original_type'], ['select', 'belongsTo'])
+                        ? Str::beforeLast($field['name'], '_id')
+                        : $field['name']
+                ))) . "'";
             }
         }
         return $vars;

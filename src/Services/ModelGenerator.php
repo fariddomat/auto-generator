@@ -47,7 +47,7 @@ class ModelGenerator
         // Relationships
         $relationships = "";
         foreach ($parsedFields as $field) {
-            if ($field['original_type'] === 'select') {
+            if (in_array($field['original_type'], ['belongsTo', 'select'])) {
                 $relatedModel = Str::studly(Str::beforeLast($field['name'], '_id'));
                 $relationships .= <<<EOT
 
@@ -57,14 +57,12 @@ class ModelGenerator
     }
 EOT;
             } elseif ($field['original_type'] === 'belongsToMany') {
-                $relatedModel = Str::studly($field['name']); // e.g., 'Users'
-                $relatedModelSingular = Str::singular($relatedModel); // e.g., 'User'
-                $pivotTable =  Str::snake($name) . '_' . Str::snake($field['name']);
-                $relatedKey = Str::snake($relatedModelSingular) === 'user' ? 'user_id' : Str::snake($relatedModel) . '_id';
-                $fieldSingular=Str::singular($field['name']);
-                $nameSnake =  Str::snake($name) ;
-
-    $relationships .= <<<EOT
+                $relatedModel = Str::studly($field['name']); // e.g., 'Roles'
+                $relatedModelSingular = Str::singular($relatedModel); // e.g., 'Role'
+                $pivotTable = Str::snake($name) . '_' . Str::snake($field['name']);
+                $nameSnake = Str::snake($name);
+                $fieldSingular = Str::singular($field['name']);
+                $relationships .= <<<EOT
 
     public function {$field['name']}()
     {
@@ -126,11 +124,12 @@ EOT;
                     $rules[] = "'$name' => '$rule|string'";
                     break;
                 case 'select':
+                case 'belongsTo':
                     $tableName = Str::snake(Str::plural(Str::beforeLast($name, '_id')));
                     $rules[] = "'$name' => '$rule|exists:$tableName,id'";
                     break;
                 case 'belongsToMany':
-                    $tableName = Str::snake($field['name']); // e.g., 'users'
+                    $tableName = Str::snake($field['name']); // e.g., 'roles'
                     $rules[] = "'$name' => '$rule|array'";
                     $rules[] = "'$name.*' => 'exists:$tableName,id'";
                     break;
@@ -146,6 +145,17 @@ EOT;
                 case 'images':
                     $rules[] = "'$name' => '$rule|array'";
                     $rules[] = "'$name.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048'";
+                    break;
+                case 'date':
+                case 'datetime':
+                    $rules[] = "'$name' => '$rule|date'";
+                    break;
+                case 'enum':
+                    $values = implode(',', $field['modifiers']);
+                    $rules[] = "'$name' => '$rule|in:$values'";
+                    break;
+                case 'json':
+                    $rules[] = "'$name' => '$rule|json'";
                     break;
             }
         }

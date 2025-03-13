@@ -36,7 +36,16 @@ class MigrationGenerator
                 continue;
             }
 
-            $fieldDefinition = "\$table->{$field['type']}('{$field['name']}')";
+            if ($field['original_type'] === 'enum') {
+                // Flatten and split modifiers to ensure individual values
+                $modifiersString = is_array($field['modifiers']) ? implode(',', $field['modifiers']) : $field['modifiers'];
+                $enumValues = explode(',', $modifiersString);
+                $values = array_map('trim', $enumValues); // Trim whitespace from each value
+                $valuesString = "'" . implode("', '", $values) . "'"; // Format for the array syntax
+                $fieldDefinition = "\$table->enum('{$field['name']}', [{$valuesString}])";
+            }else {
+                $fieldDefinition = "\$table->{$field['type']}('{$field['name']}')";
+            }
 
             if (in_array('nullable', $field['modifiers'])) {
                 $fieldDefinition .= "->nullable()";
@@ -44,7 +53,7 @@ class MigrationGenerator
             if (in_array('unique', $field['modifiers'])) {
                 $fieldDefinition .= "->unique()";
             }
-            if ($field['type'] === 'unsignedBigInteger' && Str::endsWith($field['name'], '_id')) {
+            if (in_array($field['original_type'], ['belongsTo', 'select']) && Str::endsWith($field['name'], '_id')) {
                 $relatedTable = Str::snake(Str::plural(Str::beforeLast($field['name'], '_id')));
                 $fieldDefinition = "\$table->foreignId('{$field['name']}')->constrained('$relatedTable')->onDelete('cascade')";
             }
@@ -85,9 +94,9 @@ EOT;
             if ($field['original_type'] === 'belongsToMany') {
                 $relatedModel = Str::studly($field['name']); // e.g., 'Roles'
                 $relatedTable = Str::snake($field['name']); // e.g., 'roles'
-                $relatedTableSingular =  Str::singular($relatedTable); // e.g., 'roles'
-                $tableNameSingular = Str::singular($tableName); // e.g., 'roles'
-                $pivotTable = Str::snake($name) . '_' . $relatedTable; // e.g., 'raed_roles'
+                $relatedTableSingular = Str::singular($relatedTable); // e.g., 'role'
+                $tableNameSingular = Str::singular($tableName); // e.g., 'post'
+                $pivotTable = Str::snake($name) . '_' . $relatedTable; // e.g., 'post_roles'
                 $timestamp = date('Y_m_d_His', time() + count($parsedFields)); // Offset timestamp to avoid conflicts
                 $pivotMigrationFileName = database_path("migrations/{$timestamp}_create_{$pivotTable}_table.php");
 
