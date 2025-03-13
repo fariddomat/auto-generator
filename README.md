@@ -52,7 +52,7 @@ php artisan make:auto
 ### Interactive Prompts
 - **Model Name**: Enter the model name (e.g., `Post`, must start with a capital letter).
 - **Fields**: Define fields (e.g., `title:string`, `user_id:select`, `roles:belongsToMany`). Leave blank to finish.
-  - *Supported types*: `string`, `text`, `integer`, `decimal`, `boolean`, `select`, `belongsToMany`, `file`, `image`, `images`.
+  - *Supported types*: `string`, `text`, `integer`, `decimal`, `boolean`, `select`, `belongsToMany`, `file`, `image`, `images`, `enum`, `date`, `datetime`, `json`.
   - *Modifiers*: `nullable`, `unique` (e.g., `title:string:nullable`).
 - **Type**: Choose `crud`, `api`, or `both`.
 - **API Version**: Specify version (e.g., `v1`) if API is selected.
