@@ -2,6 +2,7 @@
     'columns' => [],
     'data' => [],
     'routePrefix' => '',
+    'parentId' => null, // New prop for parent resource ID (e.g., project ID)
     'show' => false,
     'edit' => false,
     'delete' => false,
@@ -50,19 +51,19 @@
                             @if ($show || $edit || $delete || $restore)
                                 <div class="mt-2 flex space-x-4">
                                     @if ($show)
-                                        <a href="{{ route($routePrefix . '.show', $row->id) }}"
+                                        <a href="{{ route($routePrefix . '.show', $parentId ? [$parentId, $row->id] : $row->id) }}"
                                             class="text-blue-500 hover:text-blue-700" wire:navigate>
                                             <i class="fas fa-eye"></i> @lang('site.show')
                                         </a>
                                     @endif
                                     @if ($edit && !$row->trashed())
-                                        <a href="{{ route($routePrefix . '.edit', $row->id) }}"
+                                        <a href="{{ route($routePrefix . '.edit', $parentId ? [$parentId, $row->id] : $row->id) }}"
                                             class="text-yellow-500 hover:text-yellow-700" wire:navigate>
                                             <i class="fas fa-edit"></i> @lang('site.edit')
                                         </a>
                                     @endif
                                     @if ($delete && !$row->trashed())
-                                        <form action="{{ route($routePrefix . '.destroy', $row->id) }}" method="POST"
+                                        <form action="{{ route($routePrefix . '.destroy', $parentId ? [$parentId, $row->id] : $row->id) }}" method="POST"
                                             onsubmit="return confirm('@lang('site.are_you_sure')');">
                                             @csrf
                                             @method('DELETE')
@@ -72,7 +73,7 @@
                                         </form>
                                     @endif
                                     @if ($restore && $row->trashed())
-                                        <form action="{{ route($routePrefix . '.restore', $row->id) }}" method="POST"
+                                        <form action="{{ route($routePrefix . '.restore', $parentId ? [$parentId, $row->id] : $row->id) }}" method="POST"
                                             onsubmit="return confirm('@lang('site.are_you_sure_restore')');">
                                             @csrf
                                             <button type="submit" class="text-green-500 hover:text-green-700">
@@ -97,19 +98,19 @@
                         <td class="px-4 py-2 border border-gray-300 text-center hidden md:table-cell">
                             <div class="flex justify-center space-x-1">
                                 @if ($show)
-                                    <a href="{{ route($routePrefix . '.show', $row->id) }}"
+                                    <a href="{{ route($routePrefix . '.show', $parentId ? [$parentId, $row->id] : $row->id) }}"
                                         class="text-blue-500 hover:text-blue-700" wire:navigate>
                                         <i class="fas fa-eye"></i>
                                     </a>
                                 @endif
                                 @if ($edit && !$row->trashed())
-                                    <a href="{{ route($routePrefix . '.edit', $row->id) }}"
+                                    <a href="{{ route($routePrefix . '.edit', $parentId ? [$parentId, $row->id] : $row->id) }}"
                                         class="text-yellow-500 hover:text-yellow-700" wire:navigate>
                                         <i class="fas fa-edit"></i>
                                     </a>
                                 @endif
                                 @if ($delete && !$row->trashed())
-                                    <form action="{{ route($routePrefix . '.destroy', $row->id) }}" method="POST"
+                                    <form action="{{ route($routePrefix . '.destroy', $parentId ? [$parentId, $row->id] : $row->id) }}" method="POST"
                                         onsubmit="return confirm('@lang('site.are_you_sure')');">
                                         @csrf
                                         @method('DELETE')
@@ -119,7 +120,7 @@
                                     </form>
                                 @endif
                                 @if ($restore && $row->trashed())
-                                    <form action="{{ route($routePrefix . '.restore', $row->id) }}" method="POST"
+                                    <form action="{{ route($routePrefix . '.restore', $parentId ? [$parentId, $row->id] : $row->id) }}" method="POST"
                                         onsubmit="return confirm('@lang('site.are_you_sure_restore')');">
                                         @csrf
                                         <button type="submit" class="text-green-500 hover:text-green-700">

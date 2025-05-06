@@ -21,7 +21,7 @@ The `Fariddomat\AutoGenerator` package is a powerful tool designed to streamline
 Install the package via Composer:
 
 ``` bash
-composer require fariddomat/auto-generator
+composer require fariddomat/auto-generator:dev-main
 ```
 
 ### Publish Configuration (Optional)
