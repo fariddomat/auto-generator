@@ -17,7 +17,7 @@
                 <th class="px-4 py-2 border border-gray-300 text-left md:hidden">@lang('site.details')</th>
                 @foreach ($columns as $col)
                     <th class="px-4 py-2 border border-gray-300 text-left hidden md:table-cell">
-                        @lang('site.'.$col)
+                        @lang('site.' . $col)
                     </th>
                 @endforeach
                 @if ($show || $edit || $delete || $restore)
@@ -43,7 +43,16 @@
                             @foreach ($columns as $col)
                                 <div class="flex justify-between py-1">
                                     <strong>{{ ucfirst(str_replace('_', ' ', $col)) }}:</strong>
-                                    <span>{{ $row->$col ?? '—' }}</span>
+                                    <span>
+                                        @if (($col === 'img' || $col === 'image') && $row->$col)
+                                            <img src="{{ Storage::url($row->$col) }}" alt="Image"
+                                                class="w-16 h-16 rounded">
+                                        @elseif ($col === 'file' && $row->$col)
+                                            <a href="{{ Storage::url($row->$col) }}" target="_blank">View PDF</a>
+                                        @else
+                                            {{ $row->$col ?? '—' }}
+                                        @endif
+                                    </span>
                                 </div>
                             @endforeach
 
@@ -63,8 +72,9 @@
                                         </a>
                                     @endif
                                     @if ($delete && !$row->trashed())
-                                        <form action="{{ route($routePrefix . '.destroy', $parentId ? [$parentId, $row->id] : $row->id) }}" method="POST"
-                                            onsubmit="return confirm('@lang('site.are_you_sure')');">
+                                        <form
+                                            action="{{ route($routePrefix . '.destroy', $parentId ? [$parentId, $row->id] : $row->id) }}"
+                                            method="POST" onsubmit="return confirm('@lang('site.are_you_sure')');">
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit" class="text-red-500 hover:text-red-700">
@@ -73,8 +83,9 @@
                                         </form>
                                     @endif
                                     @if ($restore && $row->trashed())
-                                        <form action="{{ route($routePrefix . '.restore', $parentId ? [$parentId, $row->id] : $row->id) }}" method="POST"
-                                            onsubmit="return confirm('@lang('site.are_you_sure_restore')');">
+                                        <form
+                                            action="{{ route($routePrefix . '.restore', $parentId ? [$parentId, $row->id] : $row->id) }}"
+                                            method="POST" onsubmit="return confirm('@lang('site.are_you_sure_restore')');">
                                             @csrf
                                             <button type="submit" class="text-green-500 hover:text-green-700">
                                                 <i class="fas fa-undo"></i> @lang('site.restore')
@@ -88,8 +99,15 @@
 
                     <!-- Normal Columns (Hidden on Mobile) -->
                     @foreach ($columns as $col)
-                        <td class="px-4 py-2 border border-gray-300 hidden md:table-cell {{ $row->trashed() ? 'text-gray-400 italic' : '' }}">
-                            {{ $row->$col ?? '—' }}
+                        <td
+                            class="px-4 py-2 border border-gray-300 hidden md:table-cell {{ $row->trashed() ? 'text-gray-400 italic' : '' }}">
+                            @if (($col === 'img' || $col === 'image') && $row->$col)
+                                <img src="{{ Storage::url($row->$col) }}" alt="Image" class="w-16 h-16 rounded">
+                            @elseif ($col === 'file' && $row->$col)
+                                <a href="{{ Storage::url($row->$col) }}" target="_blank">View PDF</a>
+                            @else
+                                {{ $row->$col ?? '—' }}
+                            @endif
                         </td>
                     @endforeach
 
@@ -110,8 +128,9 @@
                                     </a>
                                 @endif
                                 @if ($delete && !$row->trashed())
-                                    <form action="{{ route($routePrefix . '.destroy', $parentId ? [$parentId, $row->id] : $row->id) }}" method="POST"
-                                        onsubmit="return confirm('@lang('site.are_you_sure')');">
+                                    <form
+                                        action="{{ route($routePrefix . '.destroy', $parentId ? [$parentId, $row->id] : $row->id) }}"
+                                        method="POST" onsubmit="return confirm('@lang('site.are_you_sure')');">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="text-red-500 hover:text-red-700">
@@ -120,8 +139,9 @@
                                     </form>
                                 @endif
                                 @if ($restore && $row->trashed())
-                                    <form action="{{ route($routePrefix . '.restore', $parentId ? [$parentId, $row->id] : $row->id) }}" method="POST"
-                                        onsubmit="return confirm('@lang('site.are_you_sure_restore')');">
+                                    <form
+                                        action="{{ route($routePrefix . '.restore', $parentId ? [$parentId, $row->id] : $row->id) }}"
+                                        method="POST" onsubmit="return confirm('@lang('site.are_you_sure_restore')');">
                                         @csrf
                                         <button type="submit" class="text-green-500 hover:text-green-700">
                                             <i class="fas fa-undo"></i>
